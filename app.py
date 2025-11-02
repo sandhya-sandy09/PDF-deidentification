@@ -1,44 +1,39 @@
 import streamlit as st
-import tempfile
-import os
-from pathlib import Path
-from main import detect_file_type, process_image, process_pdf  # adapt if needed
+import tempfile, os, zipfile, io
+from main import process_pdf_file, process_image_full
 
-st.title("Sensitive Data Blackout - PDF & Image Deidentification")
+st.title("Sensitive Data Blackout — Image & PDF De-identification")
 
-uploaded_file = st.file_uploader("Upload PDF or Image", type=['pdf', 'png', 'jpg', 'jpeg'])
+# Options
+method = st.radio("Redaction method", ["blackout", "blur"])
+
+uploaded_file = st.file_uploader("Upload PDF or Image", type=['pdf','png','jpg','jpeg'])
 
 if uploaded_file:
-    # Create a temp dir to save files
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        input_path = os.path.join(tmpdirname, uploaded_file.name)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_path = os.path.join(tmpdir, uploaded_file.name)
         with open(input_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        output_folder = os.path.join(tmpdirname, "output")
-        os.makedirs(output_folder, exist_ok=True)
+        if uploaded_file.type == "application/pdf":
+            st.info("Processing PDF pages...")
+            images, _, page_summaries = process_pdf_file(input_path, tmpdir, method=method)
 
-        file_type = detect_file_type(input_path)
+            # Display and bundle
+            zip_path = os.path.join(tmpdir, "redacted_pages.zip")
+            with zipfile.ZipFile(zip_path,"w") as zf:
+                for i,img in enumerate(images,start=1):
+                    buf = io.BytesIO()
+                    img.save(buf,format="PNG")
+                    zf.writestr(f"page_{i}_redacted.png", buf.getvalue())
+                    st.image(img, caption=f"Page {i}", use_container_width=True)
 
-        if file_type == "image":
-            output_path = os.path.join(output_folder, "blacked_out_output.png")
-            text = process_image(input_path, output_path)
-            st.image(output_path, caption="Redacted Image", use_column_width=True)
-            st.download_button("Download Redacted Image", open(output_path, "rb"), file_name="redacted.png")
+            with open(zip_path,"rb") as f:
+                st.download_button("Download Redacted Pages (ZIP)", data=f, file_name="redacted_pages.zip")
 
-        elif file_type == "pdf":
-            text = process_pdf(input_path, output_folder)
-            # Show all redacted pages as images
-            pages = sorted(Path(output_folder).glob("page_*_blacked_out.png"))
-            for i, page_path in enumerate(pages, 1):
-                st.image(str(page_path), caption=f"Redacted Page {i}", use_column_width=True)
-            # Bundle pages into zip for download
-            import zipfile
-            zip_path = os.path.join(tmpdirname, "redacted_pages.zip")
-            with zipfile.ZipFile(zip_path, "w") as zf:
-                for page_path in pages:
-                    zf.write(page_path, arcname=page_path.name)
-            st.download_button("Download Redacted Pages (ZIP)", open(zip_path, "rb"), file_name="redacted_pages.zip")
-
-        st.subheader("Extracted Text (from redacted content):")
-        st.text_area("Text", value=text, height=200)
+        else:
+            pil_out, _, _ = process_image_full(input_path, method=method)
+            st.image(pil_out, caption="Redacted Image", use_container_width=True)
+            buf = io.BytesIO()
+            pil_out.save(buf, format="PNG")
+            st.download_button("Download Redacted Image", data=buf.getvalue(), file_name="redacted.png")
