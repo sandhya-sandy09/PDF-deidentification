@@ -1,6 +1,11 @@
-pytesseract
-opencv-python
-Pillow
-pdf2image
-numpy 
-streamlit
+streamlit==1.28.1
+opencv-python==4.8.1.78
+pytesseract==0.3.10
+pillow==10.4.0
+pdf2image==1.16.3
+numpy==1.26.4
+reportlab==4.0.4  
+easyocr==1.7.1
+ultralytics==8.2.0
+torch torchvision torchaudio
+cv2
